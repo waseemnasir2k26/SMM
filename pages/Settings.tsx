@@ -14,6 +14,7 @@ const Settings: React.FC = () => {
     [Platform.FACEBOOK]: { id: '', secret: '' },
     [Platform.LINKEDIN]: { id: '', secret: '' },
     [Platform.YOUTUBE]: { id: '', secret: '' },
+    [Platform.INSTAGRAM]: { id: '', secret: '' },
   });
 
   useEffect(() => {
@@ -57,11 +58,16 @@ const Settings: React.FC = () => {
     try {
         const url = await api.connectPlatform(platform);
         console.log(`Redirecting to ${url}`);
-        alert(`Simulating redirect to ${platform} OAuth page...`);
-        setTimeout(() => {
-            setTokens(prev => prev.map(t => 
-                t.platform === platform ? { ...t, connected: true, account_name: 'Simulated User', username: '@simulated_user' } : t
-            ));
+        // Simulate OAuth flow for demo purposes
+        const platformName = PLATFORM_LABELS[platform];
+        alert(`Redirecting to ${platformName} to authorize access...`);
+        
+        // Simulating the callback delay
+        setTimeout(async () => {
+            // Force refresh of status from "server"
+            // In a real app, this would happen after the OAuth callback redirect
+            const updatedTokens = await api.getPlatformStatus();
+            setTokens(updatedTokens);
         }, 1500);
     } catch (e) {
         alert("Failed to initiate connection");
@@ -72,6 +78,7 @@ const Settings: React.FC = () => {
       if (!confirm(`Disconnect ${PLATFORM_LABELS[platform]}?`)) return;
       try {
           await api.disconnectPlatform(platform);
+          // Optimistically update UI
           setTokens(prev => prev.map(t => 
             t.platform === platform ? { ...t, connected: false, account_name: '', username: undefined, page_name: undefined } : t
         ));
@@ -91,8 +98,6 @@ const Settings: React.FC = () => {
 
       <div className="space-y-6">
         {Object.values(Platform).map((platform) => {
-            if (platform === Platform.INSTAGRAM) return null;
-
             const tokenData = tokens.find(t => t.platform === platform);
             const isConnected = tokenData?.connected;
 

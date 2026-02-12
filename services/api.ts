@@ -79,6 +79,7 @@ const MOCK_PLATFORM_STATUS: PlatformToken[] = [
     id: 5, 
     platform: 'youtube', 
     account_name: 'SocialSync TV', 
+    username: '@SocialSyncTV',
     connected: true,
     avatar_url: 'https://api.dicebear.com/7.x/initials/svg?seed=YT'
   },
@@ -162,6 +163,21 @@ export const api = {
   connectPlatform: async (platform: string): Promise<string> => {
     // In a real app, this returns the OAuth URL. 
     // Here we return a mock URL to demonstrate the flow.
+    await delay(500);
+    
+    // Simulate successful connection update in mock DB
+    const p = MOCK_PLATFORM_STATUS.find(pt => pt.platform === platform);
+    if (p) {
+        p.connected = true;
+        p.account_name = `Demo ${platform.charAt(0).toUpperCase() + platform.slice(1)} User`;
+        p.username = `@demo_${platform}_user`;
+        p.avatar_url = `https://api.dicebear.com/7.x/initials/svg?seed=${platform}`;
+        
+        if (platform === 'facebook' || platform === 'instagram') {
+             p.page_name = `Demo ${platform.charAt(0).toUpperCase() + platform.slice(1)} Page`;
+        }
+    }
+    
     return `/api/auth/${platform}/connect`;
   },
   
