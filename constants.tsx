@@ -1,10 +1,10 @@
 import React from 'react';
-import { Facebook, Instagram, Twitter, Linkedin, Youtube, LayoutDashboard, PenSquare, List, Settings } from 'lucide-react';
+import { Facebook, Instagram, Twitter, Linkedin, Youtube, LayoutDashboard, SquarePen, List, Settings } from 'lucide-react';
 import { Platform } from './types';
 
 export const NAV_ITEMS = [
   { label: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
-  { label: 'Create Post', path: '/create', icon: <PenSquare size={20} /> },
+  { label: 'Create Post', path: '/create', icon: <SquarePen size={20} /> },
   { label: 'All Posts', path: '/posts', icon: <List size={20} /> },
   { label: 'Settings', path: '/settings', icon: <Settings size={20} /> },
 ];

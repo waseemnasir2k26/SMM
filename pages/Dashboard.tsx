@@ -4,7 +4,7 @@ import { DashboardStats, Post, PostAnalytics } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
-import { ArrowUpRight, CheckCircle2, AlertCircle, Share2, CalendarClock, Activity, MessageCircle, ThumbsUp, Eye } from 'lucide-react';
+import { ArrowUpRight, CircleCheck, AlertCircle, Share2, CalendarClock, Activity, MessageCircle, ThumbsUp, Eye } from 'lucide-react';
 import { PLATFORM_ICONS } from '../constants';
 
 const Dashboard: React.FC = () => {
@@ -88,7 +88,7 @@ const Dashboard: React.FC = () => {
         <StatCard 
           title="Connected" 
           value={stats?.connectedPlatforms || 0} 
-          icon={<CheckCircle2 className="text-emerald-600" size={24} />}
+          icon={<CircleCheck className="text-emerald-600" size={24} />}
           subtext="Active platforms"
         />
         <StatCard 
