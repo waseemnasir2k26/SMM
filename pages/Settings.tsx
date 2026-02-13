@@ -1,217 +1,364 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../services/api';
-import { PlatformToken, Platform } from '../types';
-import { PLATFORM_ICONS, PLATFORM_LABELS } from '../constants';
-import { Save, LogIn, LogOut, CheckCircle, ExternalLink, Key } from 'lucide-react';
+import { api, checkBackendHealth } from '../services/api';
+import {
+  Twitter,
+  CheckCircle,
+  XCircle,
+  ExternalLink,
+  Key,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
+  Copy,
+  Check,
+  Server
+} from 'lucide-react';
+
+interface TwitterStatus {
+  connected: boolean;
+  username?: string;
+  user_id?: string;
+  name?: string;
+  profile_image?: string;
+  followers_count?: number;
+  error?: string;
+  required_keys?: string[];
+}
 
 const Settings: React.FC = () => {
-  const [tokens, setTokens] = useState<PlatformToken[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // State for credential forms
-  const [credentials, setCredentials] = useState<Record<string, { id: string, secret: string }>>({
-    [Platform.TWITTER]: { id: '', secret: '' },
-    [Platform.FACEBOOK]: { id: '', secret: '' },
-    [Platform.LINKEDIN]: { id: '', secret: '' },
-    [Platform.YOUTUBE]: { id: '', secret: '' },
-    [Platform.INSTAGRAM]: { id: '', secret: '' },
-  });
+  const [backendOnline, setBackendOnline] = useState(false);
+  const [twitterStatus, setTwitterStatus] = useState<TwitterStatus | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    loadStatus();
+    checkStatus();
   }, []);
 
-  const loadStatus = async () => {
+  const checkStatus = async () => {
+    setLoading(true);
     try {
-      const data = await api.getPlatformStatus();
-      setTokens(data);
-    } catch (error) {
-      console.error(error);
+      const isOnline = await checkBackendHealth();
+      setBackendOnline(isOnline);
+
+      if (isOnline) {
+        const status = await api.getTwitterStatus();
+        setTwitterStatus(status);
+      }
+    } catch (e) {
+      setBackendOnline(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCredentialChange = (platform: string, field: 'id' | 'secret', value: string) => {
-    setCredentials(prev => ({
-      ...prev,
-      [platform]: { ...prev[platform], [field]: value }
-    }));
-  };
-
-  const saveCredentials = async (platform: string) => {
-    const { id, secret } = credentials[platform];
-    if (!id || !secret) {
-        alert("Client ID and Secret are required.");
-        return;
-    }
+  const handleTestConnection = async () => {
+    setTesting(true);
     try {
-        await api.saveCredentials(platform, id, secret);
-        alert(`Credentials saved for ${PLATFORM_LABELS[platform]}`);
-        setCredentials(prev => ({ ...prev, [platform]: { id: '', secret: '' } }));
-    } catch (e) {
-        alert("Failed to save credentials");
+      await api.testTwitterConnection();
+      await checkStatus();
+      alert('Connection successful!');
+    } catch (e: any) {
+      alert(e.message || 'Connection test failed');
+    } finally {
+      setTesting(false);
     }
   };
 
-  const handleConnect = async (platform: string) => {
-    try {
-        const url = await api.connectPlatform(platform);
-        console.log(`Redirecting to ${url}`);
-        // Simulate OAuth flow for demo purposes
-        const platformName = PLATFORM_LABELS[platform];
-        alert(`Redirecting to ${platformName} to authorize access...`);
-        
-        // Simulating the callback delay
-        setTimeout(async () => {
-            // Force refresh of status from "server"
-            // In a real app, this would happen after the OAuth callback redirect
-            const updatedTokens = await api.getPlatformStatus();
-            setTokens(updatedTokens);
-        }, 1500);
-    } catch (e) {
-        alert("Failed to initiate connection");
-    }
+  const copyToClipboard = (text: string, keyName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(keyName);
+    setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleDisconnect = async (platform: string) => {
-      if (!confirm(`Disconnect ${PLATFORM_LABELS[platform]}?`)) return;
-      try {
-          await api.disconnectPlatform(platform);
-          // Optimistically update UI
-          setTokens(prev => prev.map(t => 
-            t.platform === platform ? { ...t, connected: false, account_name: '', username: undefined, page_name: undefined } : t
-        ));
-      } catch (e) {
-          alert("Failed to disconnect");
-      }
-  };
+  const envKeys = [
+    { name: 'TWITTER_API_KEY', desc: 'API Key (Consumer Key)' },
+    { name: 'TWITTER_API_SECRET', desc: 'API Secret (Consumer Secret)' },
+    { name: 'TWITTER_ACCESS_TOKEN', desc: 'Access Token' },
+    { name: 'TWITTER_ACCESS_TOKEN_SECRET', desc: 'Access Token Secret' },
+  ];
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="animate-spin text-indigo-600" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-10">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Settings & Connections</h2>
-        <p className="text-slate-500">Manage your API credentials and connect your social accounts.</p>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-sky-100 rounded-lg">
+          <Twitter size={24} className="text-sky-500" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Twitter Settings</h2>
+          <p className="text-slate-500">Configure your Twitter/X connection</p>
+        </div>
       </div>
 
-      <div className="space-y-6">
-        {Object.values(Platform).map((platform) => {
-            const tokenData = tokens.find(t => t.platform === platform);
-            const isConnected = tokenData?.connected;
+      {/* Backend Status */}
+      <div className={`p-4 rounded-xl border ${
+        backendOnline
+          ? 'bg-emerald-50 border-emerald-200'
+          : 'bg-red-50 border-red-200'
+      }`}>
+        <div className="flex items-center gap-3">
+          <Server size={20} className={backendOnline ? 'text-emerald-600' : 'text-red-600'} />
+          <div>
+            <p className={`font-medium ${backendOnline ? 'text-emerald-800' : 'text-red-800'}`}>
+              Backend Server: {backendOnline ? 'Online' : 'Offline'}
+            </p>
+            {!backendOnline && (
+              <p className="text-sm text-red-600 mt-1">
+                Start the backend server: <code className="bg-red-100 px-1 rounded">cd backend && python main.py</code>
+              </p>
+            )}
+          </div>
+          <button
+            onClick={checkStatus}
+            className="ml-auto p-2 hover:bg-white/50 rounded-lg transition-colors"
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
+      </div>
 
-            return (
-                <div key={platform} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50">
-                        <div className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
-                            {React.cloneElement(PLATFORM_ICONS[platform] as React.ReactElement, { size: 24 })}
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-slate-900 text-lg">{PLATFORM_LABELS[platform]}</h3>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                <span className="text-xs font-medium text-slate-500">
-                                    {isConnected ? 'Connected' : 'Not Connected'}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="ml-auto">
-                            {isConnected ? (
-                                <button 
-                                    onClick={() => handleDisconnect(platform)}
-                                    className="flex items-center gap-2 text-sm text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
-                                >
-                                    <LogOut size={16} /> Disconnect
-                                </button>
-                            ) : (
-                                <button 
-                                    onClick={() => handleConnect(platform)}
-                                    className="flex items-center gap-2 text-sm bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg transition-colors"
-                                >
-                                    <LogIn size={16} /> Connect Account
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* Credentials Form */}
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                                <Key size={14} className="text-slate-400" />
-                                API Configuration
-                            </h4>
-                            <p className="text-xs text-slate-500 mb-2">
-                                Enter your OAuth App Client ID and Secret to enable connections.
-                            </p>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Client ID</label>
-                                <input 
-                                    type="text" 
-                                    value={credentials[platform]?.id || ''}
-                                    onChange={(e) => handleCredentialChange(platform, 'id', e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    placeholder="Enter Client ID"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Client Secret</label>
-                                <input 
-                                    type="password" 
-                                    value={credentials[platform]?.secret || ''}
-                                    onChange={(e) => handleCredentialChange(platform, 'secret', e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    placeholder="••••••••••••••"
-                                />
-                            </div>
-                            <button 
-                                onClick={() => saveCredentials(platform)}
-                                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                            >
-                                <Save size={14} /> Save Credentials
-                            </button>
-                        </div>
-
-                        {/* Connection Info */}
-                        <div className="bg-slate-50 rounded-lg p-5">
-                            <h4 className="text-sm font-semibold text-slate-900 mb-3">Connection Details</h4>
-                            {isConnected ? (
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span className="text-slate-500">Connected As</span>
-                                        <div className="text-right">
-                                            <span className="block font-medium text-slate-800">{tokenData?.account_name}</span>
-                                            {tokenData?.username && <span className="block text-xs text-slate-500">{tokenData.username}</span>}
-                                        </div>
-                                    </div>
-                                    {tokenData?.page_name && (
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="text-slate-500">Managing Page</span>
-                                            <span className="font-medium text-slate-800">{tokenData.page_name}</span>
-                                        </div>
-                                    )}
-                                    <div className="flex items-center gap-2 text-xs text-emerald-600 mt-2">
-                                        <CheckCircle size={14} /> Token Active
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="text-center py-6">
-                                    <p className="text-sm text-slate-400">No account connected yet.</p>
-                                    <p className="text-xs text-slate-400 mt-1">Configure API keys, then click Connect.</p>
-                                </div>
-                            )}
-                            
-                            <div className="mt-6 pt-4 border-t border-slate-200">
-                                <a href="#" className="flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-600 transition-colors">
-                                    <ExternalLink size={12} /> Developer Docs: How to get API Keys
-                                </a>
-                            </div>
-                        </div>
-                    </div>
+      {/* Twitter Connection Status */}
+      {backendOnline && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-sky-100 rounded-xl">
+                <Twitter size={28} className="text-sky-500" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-900">Twitter / X</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`w-2 h-2 rounded-full ${
+                    twitterStatus?.connected ? 'bg-emerald-500' : 'bg-slate-300'
+                  }`} />
+                  <span className="text-sm text-slate-500">
+                    {twitterStatus?.connected ? 'Connected' : 'Not Connected'}
+                  </span>
                 </div>
-            );
-        })}
+              </div>
+
+              <button
+                onClick={handleTestConnection}
+                disabled={testing}
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors disabled:bg-slate-300 flex items-center gap-2"
+              >
+                {testing ? (
+                  <><Loader2 size={16} className="animate-spin" /> Testing...</>
+                ) : (
+                  <><RefreshCw size={16} /> Test Connection</>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {twitterStatus?.connected ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
+                <div className="flex items-center gap-4">
+                  {twitterStatus.profile_image && (
+                    <img
+                      src={twitterStatus.profile_image}
+                      alt="Profile"
+                      className="w-16 h-16 rounded-full border-2 border-emerald-300"
+                    />
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle size={18} className="text-emerald-600" />
+                      <span className="font-semibold text-emerald-800">Connected</span>
+                    </div>
+                    <p className="text-xl font-bold text-slate-900 mt-1">
+                      @{twitterStatus.username}
+                    </p>
+                    {twitterStatus.name && (
+                      <p className="text-slate-600">{twitterStatus.name}</p>
+                    )}
+                    {twitterStatus.followers_count !== undefined && (
+                      <p className="text-sm text-slate-500 mt-1">
+                        {twitterStatus.followers_count.toLocaleString()} followers
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-amber-800">Not Connected</p>
+                    <p className="text-amber-700 mt-1">
+                      {twitterStatus?.error || 'Twitter API credentials are not configured.'}
+                    </p>
+                    {twitterStatus?.required_keys && (
+                      <div className="mt-3 p-3 bg-amber-100 rounded-lg">
+                        <p className="text-sm font-medium text-amber-800 mb-2">Missing:</p>
+                        <ul className="text-sm text-amber-700 space-y-1">
+                          {twitterStatus.required_keys.map(key => (
+                            <li key={key}>• {key}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Setup Guide */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <Key size={20} />
+            Setup Guide
+          </h3>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Info Box */}
+          <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+            <p className="text-sm text-sky-800">
+              <strong>Twitter API v2 (Free Tier)</strong> - You need a Twitter Developer account
+              with Free tier access. This allows posting tweets with media.
+            </p>
+          </div>
+
+          {/* Steps */}
+          <ol className="space-y-4">
+            <li className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-semibold text-xs">1</span>
+              <div>
+                <p className="font-medium text-slate-900">Create a Developer Account</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Go to{' '}
+                  <a
+                    href="https://developer.twitter.com/en/portal/petition/essential/basic-info"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    Twitter Developer Portal <ExternalLink size={12} />
+                  </a>
+                </p>
+              </div>
+            </li>
+
+            <li className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-semibold text-xs">2</span>
+              <div>
+                <p className="font-medium text-slate-900">Create a Project & App</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Create a new Project, then create an App. Name it "Social Media Dashboard".
+                </p>
+              </div>
+            </li>
+
+            <li className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-semibold text-xs">3</span>
+              <div>
+                <p className="font-medium text-slate-900">Configure User Authentication</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Go to App Settings → User authentication settings:
+                </p>
+                <ul className="text-sm text-slate-600 mt-2 space-y-1 ml-4">
+                  <li>• App permissions: <strong>Read and write</strong></li>
+                  <li>• Type: <strong>Web App, Automated App, or Bot</strong></li>
+                  <li>• Callback URL: <code className="bg-slate-100 px-1 rounded text-xs">http://localhost:5173</code></li>
+                </ul>
+              </div>
+            </li>
+
+            <li className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-semibold text-xs">4</span>
+              <div>
+                <p className="font-medium text-slate-900">Generate Keys & Tokens</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Go to "Keys and Tokens" tab and generate all 4 credentials.
+                </p>
+              </div>
+            </li>
+
+            <li className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-semibold text-xs">5</span>
+              <div>
+                <p className="font-medium text-slate-900">Create .env File</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Copy <code className="bg-slate-100 px-1 rounded text-xs">backend/.env.example</code> to{' '}
+                  <code className="bg-slate-100 px-1 rounded text-xs">backend/.env</code> and fill in your keys.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      {/* Environment Variables */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="text-lg font-semibold text-slate-900">Required Environment Variables</h3>
+        </div>
+
+        <div className="p-6">
+          <div className="bg-slate-900 rounded-xl p-4 font-mono text-sm overflow-x-auto">
+            {envKeys.map((key) => (
+              <div
+                key={key.name}
+                className="flex items-center justify-between py-2 border-b border-slate-700 last:border-0"
+              >
+                <div>
+                  <span className="text-emerald-400">{key.name}</span>
+                  <span className="text-slate-500">=</span>
+                  <span className="text-amber-300">your_value_here</span>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(`${key.name}=`, key.name)}
+                  className="text-slate-400 hover:text-white p-1 rounded transition-colors"
+                  title="Copy"
+                >
+                  {copiedKey === key.name ? (
+                    <Check size={16} className="text-emerald-400" />
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 text-sm text-slate-600">
+            <p className="font-medium mb-2">File location:</p>
+            <code className="bg-slate-100 px-2 py-1 rounded">backend/.env</code>
+          </div>
+        </div>
+      </div>
+
+      {/* Run Backend */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-4">Start the Backend Server</h3>
+
+        <div className="bg-slate-900 rounded-xl p-4 font-mono text-sm text-slate-100">
+          <p className="text-slate-400"># Install dependencies</p>
+          <p>cd backend && pip install -r requirements.txt</p>
+          <p className="text-slate-400 mt-3"># Start server</p>
+          <p>python main.py</p>
+        </div>
+
+        <p className="text-sm text-slate-500 mt-4">
+          Server will run at <code className="bg-slate-100 px-1 rounded">http://localhost:8000</code>
+        </p>
       </div>
     </div>
   );

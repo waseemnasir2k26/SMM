@@ -1,195 +1,244 @@
-import { Post, PlatformToken, PlatformConfig, DashboardStats, PostAnalytics } from '../types';
+/**
+ * SOCIAL MEDIA DASHBOARD - API SERVICE
+ * =====================================
+ * Real API integration with Twitter backend.
+ *
+ * Backend URL: http://localhost:8000/api
+ *
+ * Features:
+ * - Real Twitter posting
+ * - File upload support
+ * - Retry on failure
+ * - Proper error handling
+ */
 
-// Mock data to ensure the UI works in the preview environment without a real backend
-const MOCK_POSTS: Post[] = [
-  {
-    id: 1,
-    content: "Just launched our new product line! Check it out. 🚀 #startup #launch",
-    platforms: ['twitter', 'linkedin'],
-    status: 'posted',
-    word_count: 12,
-    posted_time: new Date(Date.now() - 86400000).toISOString(),
-    created_at: new Date(Date.now() - 90000000).toISOString(),
-  },
-  {
-    id: 2,
-    content: "Behind the scenes at the office today.",
-    image_url: "https://picsum.photos/800/600",
-    platforms: ['instagram', 'facebook'],
-    status: 'draft',
-    word_count: 7,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 3,
-    content: "New video tutorial is live on YouTube!",
-    video_url: "https://youtube.com/watch?v=123",
-    platforms: ['youtube', 'twitter'],
-    status: 'failed',
-    error_message: "Video upload failed: Invalid format or connection timeout.",
-    word_count: 8,
-    created_at: new Date(Date.now() - 172800000).toISOString(),
-  },
-  {
-    id: 4,
-    content: "Upcoming webinar regarding Q4 trends.",
-    platforms: ['linkedin'],
-    status: 'scheduled',
-    scheduled_time: new Date(Date.now() + 86400000).toISOString(),
-    word_count: 6,
-    created_at: new Date().toISOString(),
+import { Post, PlatformToken, DashboardStats, PostAnalytics } from '../types';
+
+// API Base URL - change this for production
+const API_BASE_URL = 'http://localhost:8000/api';
+
+// ============== HELPER FUNCTIONS ==============
+
+async function fetchAPI<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+
+  const defaultHeaders: Record<string, string> = {};
+
+  // Only set Content-Type if not FormData
+  if (!(options.body instanceof FormData)) {
+    defaultHeaders['Content-Type'] = 'application/json';
   }
-];
 
-const MOCK_ANALYTICS: PostAnalytics[] = [
-  { id: 1, postId: 1, platform: 'twitter', likes: 45, comments: 12, shares: 8, reach: 1250 },
-  { id: 2, postId: 1, platform: 'linkedin', likes: 120, comments: 34, shares: 15, reach: 3400 },
-];
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  });
 
-const MOCK_PLATFORM_STATUS: PlatformToken[] = [
-  { 
-    id: 1, 
-    platform: 'twitter', 
-    account_name: 'SocialSync App', 
-    username: '@SocialSyncApp',
-    connected: true,
-    avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SocialSync'
-  },
-  { 
-    id: 2, 
-    platform: 'facebook', 
-    account_name: 'John Doe', 
-    page_name: 'SocialSync Official Page', 
-    connected: true,
-    avatar_url: 'https://api.dicebear.com/7.x/initials/svg?seed=FB'
-  },
-  { 
-    id: 3, 
-    platform: 'linkedin', 
-    account_name: '', 
-    connected: false 
-  },
-  { 
-    id: 4, 
-    platform: 'instagram', 
-    account_name: '', 
-    connected: false 
-  },
-  { 
-    id: 5, 
-    platform: 'youtube', 
-    account_name: 'SocialSync TV', 
-    username: '@SocialSyncTV',
-    connected: true,
-    avatar_url: 'https://api.dicebear.com/7.x/initials/svg?seed=YT'
-  },
-];
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `API Error: ${response.status}`);
+  }
 
-// Helper to simulate network delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  return response.json();
+}
+
+// Retry wrapper for critical operations
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      console.log(`[API] Attempt ${attempt + 1}/${maxRetries} failed:`, error);
+
+      if (attempt < maxRetries - 1) {
+        const waitTime = delayMs * Math.pow(2, attempt);
+        console.log(`[API] Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+
+  throw lastError || new Error('All retries failed');
+}
+
+// ============== API METHODS ==============
 
 export const api = {
+  // Dashboard stats
   getStats: async (): Promise<DashboardStats> => {
-    await delay(500);
-    return {
-      totalPosts: 142,
-      postsThisWeek: 12,
-      failedPosts: 3,
-      connectedPlatforms: 3,
-    };
+    return fetchAPI<DashboardStats>('/stats');
   },
 
+  // Get all posts
   getPosts: async (): Promise<Post[]> => {
-    await delay(600);
-    return [...MOCK_POSTS];
+    const result = await fetchAPI<{ posts: Post[] }>('/posts');
+    return result.posts;
   },
 
-  getAnalytics: async (): Promise<PostAnalytics[]> => {
-    await delay(700);
-    return [...MOCK_ANALYTICS];
-  },
-
+  // Create a new post (draft)
   createPost: async (postData: Partial<Post>): Promise<Post> => {
-    await delay(800);
-    const newPost: Post = {
-      id: Math.floor(Math.random() * 10000),
-      content: postData.content || '',
-      image_url: postData.image_url,
-      video_url: postData.video_url,
-      platforms: postData.platforms || [],
-      status: postData.scheduled_time ? 'scheduled' : 'draft',
-      scheduled_time: postData.scheduled_time,
-      word_count: (postData.content || '').split(' ').length,
-      created_at: new Date().toISOString(),
-    };
-    MOCK_POSTS.unshift(newPost);
-    return newPost;
+    const result = await fetchAPI<{ success: boolean; post: Post }>('/posts', {
+      method: 'POST',
+      body: JSON.stringify({
+        content: postData.content,
+        image_url: postData.image_url,
+        video_url: postData.video_url,
+        scheduled_time: postData.scheduled_time,
+      }),
+    });
+    return result.post;
   },
 
+  // Delete a post
   deletePost: async (id: number): Promise<void> => {
-    await delay(400);
-    const index = MOCK_POSTS.findIndex(p => p.id === id);
-    if (index > -1) {
-      MOCK_POSTS.splice(index, 1);
-    }
+    await fetchAPI(`/posts/${id}`, { method: 'DELETE' });
   },
 
-  publishPost: async (id: number): Promise<void> => {
-    await delay(1500); // Simulate API call to platforms
-    const post = MOCK_POSTS.find(p => p.id === id);
-    if (post) {
-      // Randomly fail for demonstration if it was already failed or specific content
-      if (Math.random() > 0.9) {
-          post.status = 'failed';
-          post.error_message = 'Simulated timeout error from provider.';
-          throw new Error("Simulated failure");
-      }
-      post.status = 'posted';
-      post.posted_time = new Date().toISOString();
-      post.error_message = undefined;
-    }
+  // Publish a post to Twitter (with retry)
+  publishPost: async (id: number): Promise<{
+    success: boolean;
+    post: Post;
+    twitter_result: {
+      success: boolean;
+      post_id?: string;
+      url?: string;
+      error?: string;
+    };
+  }> => {
+    return withRetry(
+      () => fetchAPI(`/posts/${id}/publish`, { method: 'POST' }),
+      3, // max retries
+      2000 // initial delay
+    );
   },
 
+  // Direct publish with file upload
+  publishDirect: async (
+    content: string,
+    file?: File
+  ): Promise<{
+    success: boolean;
+    post: Post;
+    twitter_result: any;
+  }> => {
+    const formData = new FormData();
+    formData.append('content', content);
+
+    if (file) {
+      formData.append('file', file);
+    }
+
+    return withRetry(
+      () => fetchAPI('/publish-direct', {
+        method: 'POST',
+        body: formData,
+      }),
+      3,
+      2000
+    );
+  },
+
+  // Upload media file
+  uploadMedia: async (file: File): Promise<{
+    success: boolean;
+    file_path: string;
+    file_name: string;
+    file_size: number;
+    content_type: string;
+    is_video: boolean;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return fetchAPI('/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  // Get Twitter connection status
+  getTwitterStatus: async (): Promise<{
+    connected: boolean;
+    username?: string;
+    user_id?: string;
+    name?: string;
+    profile_image?: string;
+    error?: string;
+    required_keys?: string[];
+  }> => {
+    return fetchAPI('/twitter/status');
+  },
+
+  // Test Twitter connection
+  testTwitterConnection: async (): Promise<{
+    success: boolean;
+    message: string;
+    username?: string;
+  }> => {
+    return fetchAPI('/twitter/test', { method: 'POST' });
+  },
+
+  // Get platform status (compatibility)
   getPlatformStatus: async (): Promise<PlatformToken[]> => {
-    await delay(500);
-    return [...MOCK_PLATFORM_STATUS];
+    return fetchAPI<PlatformToken[]>('/platforms/status');
   },
 
+  // Analytics (placeholder)
+  getAnalytics: async (): Promise<PostAnalytics[]> => {
+    // Return empty for now - implement when analytics backend is ready
+    return [];
+  },
+
+  // Credentials (placeholder - implement backend if needed)
   saveCredentials: async (platform: string, clientId: string, clientSecret: string): Promise<void> => {
-    await delay(800);
-    console.log(`Saved credentials for ${platform}`);
+    console.log(`[API] Save credentials for ${platform} - implement backend`);
   },
 
   connectPlatform: async (platform: string): Promise<string> => {
-    // In a real app, this returns the OAuth URL. 
-    // Here we return a mock URL to demonstrate the flow.
-    await delay(500);
-    
-    // Simulate successful connection update in mock DB
-    const p = MOCK_PLATFORM_STATUS.find(pt => pt.platform === platform);
-    if (p) {
-        p.connected = true;
-        p.account_name = `Demo ${platform.charAt(0).toUpperCase() + platform.slice(1)} User`;
-        p.username = `@demo_${platform}_user`;
-        p.avatar_url = `https://api.dicebear.com/7.x/initials/svg?seed=${platform}`;
-        
-        if (platform === 'facebook' || platform === 'instagram') {
-             p.page_name = `Demo ${platform.charAt(0).toUpperCase() + platform.slice(1)} Page`;
-        }
+    if (platform !== 'twitter') {
+      throw new Error('Only Twitter is supported');
     }
-    
-    return `/api/auth/${platform}/connect`;
+    // For Twitter, credentials are in .env - no OAuth flow needed
+    return '/settings';
   },
-  
+
   disconnectPlatform: async (platform: string): Promise<void> => {
-     await delay(600);
-     const p = MOCK_PLATFORM_STATUS.find(pt => pt.platform === platform);
-     if (p) {
-         p.connected = false;
-         p.account_name = '';
-         p.page_name = undefined;
-         p.username = undefined;
-         p.avatar_url = undefined;
-     }
-  }
+    console.log(`[API] Disconnect ${platform} - remove credentials from .env`);
+  },
 };
+
+// ============== FALLBACK TO MOCK (if backend not available) ==============
+
+// Check if backend is available
+let backendAvailable: boolean | null = null;
+
+export async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000),
+    });
+    backendAvailable = response.ok;
+    return backendAvailable;
+  } catch {
+    backendAvailable = false;
+    return false;
+  }
+}
+
+export function isBackendAvailable(): boolean | null {
+  return backendAvailable;
+}
